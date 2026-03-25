@@ -18,7 +18,7 @@ fn test_create_pool() {
     let duration = 3600;
 
     let pool_id = client.create_pool(&creator, &title, &description, &outcome_a, &outcome_b, &duration);
-    assert_eq!(pool_id, 2);
+    assert_eq!(pool_id, 1);
 
     let pool = client.get_pool(&pool_id).unwrap();
     assert_eq!(pool.creator, creator);

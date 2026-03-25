@@ -1,6 +1,7 @@
 import { STACKS_MAINNET, STACKS_TESTNET, StacksNetwork } from "@stacks/network";
 import { fetchCallReadOnlyFunction, cvToValue, uintCV, principalCV, ClarityValue } from "@stacks/transactions";
-import { CONTRACT_ADDRESS, CONTRACT_NAME, DEFAULT_NETWORK, NETWORK_CONFIG } from "./constants";
+import { CONTRACT_ADDRESS, CONTRACT_NAME } from "./constants";
+import { DEFAULT_NETWORK } from "./network-config";
 
 // Use network based on environment
 const network: StacksNetwork = DEFAULT_NETWORK === 'mainnet' ? STACKS_MAINNET : STACKS_TESTNET;
@@ -15,8 +16,9 @@ export interface Pool {
     totalA: number;
     totalB: number;
     settled: boolean;
-    winningOutcome: number | null;
+    winningOutcome: number | undefined;
     expiry: number;
+    status: 'active' | 'settled' | 'expired';
 }
 
 export async function getPoolCount(): Promise<number> {
@@ -64,8 +66,9 @@ export async function getPool(poolId: number): Promise<Pool | null> {
             totalA: Number(value['total-a']),
             totalB: Number(value['total-b']),
             settled: value.settled,
-            winningOutcome: value['winning-outcome'] ?? null,
+            winningOutcome: value['winning-outcome'] ?? undefined,
             expiry: Number(value.expiry ?? 0),
+            status: value.settled ? 'settled' : 'active',
         };
     } catch (e) {
         console.error(`Failed to fetch pool ${poolId}`, e);
@@ -138,9 +141,17 @@ export async function getUserActivity(
     limit: number = 20
 ): Promise<ActivityItem[]> {
     try {
-        const { STACKS_API_BASE_URL } = await import('./constants');
-        const { NETWORK_CONFIG, DEFAULT_NETWORK } = await import('./constants');
-        const explorerBase = NETWORK_CONFIG[DEFAULT_NETWORK].explorerUrl;
+        const { NETWORK_CONFIG, DEFAULT_NETWORK } = await import('./network-config');
+        
+        // Safety check for network configuration
+        const networkInfo = NETWORK_CONFIG[DEFAULT_NETWORK];
+        if (!networkInfo) {
+            console.error(`Missing network configuration for: ${DEFAULT_NETWORK}`);
+            return [];
+        }
+
+        const explorerBase = networkInfo.explorerUrl || 'https://explorer.hiro.so';
+        const STACKS_API_BASE_URL = networkInfo.apiUrl;
 
         const url = `${STACKS_API_BASE_URL}/extended/v1/address/${userAddress}/transactions?limit=${limit}&type=contract_call`;
         const response = await fetch(url);
