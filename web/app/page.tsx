@@ -79,12 +79,12 @@ export default function Home() {
           <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
             You can create your own prediction market on any event using our community-driven protocol.
           </p>
-          <a
+          <Link
             href="/create"
             className="btn-primary"
           >
             Create Your Own Market
-          </a>
+          </Link>
         </div>
       </section>
     </main>

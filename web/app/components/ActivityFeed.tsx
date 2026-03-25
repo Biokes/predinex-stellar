@@ -258,13 +258,13 @@ const ActivityFeed = memo(function ActivityFeed({
 
             {limit && activities.length > limit && (
                 <div className="text-center mt-6">
-                    <a
+                    <Link
                         href="/activity"
                         className="inline-flex items-center gap-2 text-primary font-bold hover:underline text-sm"
                     >
                         View All Activity
                         <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
+                    </Link>
                 </div>
             )}
         </div>
