@@ -3,6 +3,7 @@
 import Navbar from "../../components/Navbar";
 import BettingSection from "../../components/BettingSection";
 import ClaimWinningsButton from "../../../components/ClaimWinningsButton";
+import SettledPoolSummary from "../../components/SettledPoolSummary";
 import { useWallet } from "../../components/WalletAdapterProvider";
 import { useEffect, useState } from "react";
 import { predinexReadApi } from "../../lib/adapters/predinex-read-api";
@@ -193,9 +194,10 @@ export default function PoolDetails({ params }: { params: Promise<{ id: string }
                         </div>
                     )}
 
-                    {/* Betting UI */}
+                    {/* Betting UI / Settled Summary */}
                     {pool.settled ? (
                         <div className="mt-6">
+                            <SettledPoolSummary pool={pool} />
                             <ClaimWinningsButton
                                 poolId={poolId}
                                 isSettled={pool.settled}
