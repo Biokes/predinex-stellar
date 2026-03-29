@@ -3,6 +3,7 @@
 import Navbar from "../../components/Navbar";
 import BettingSection from "../../components/BettingSection";
 import ClaimWinningsButton from "../../../components/ClaimWinningsButton";
+import SettledPoolSummary from "../../components/SettledPoolSummary";
 import { useWallet } from "../../components/WalletAdapterProvider";
 import { useEffect, useState } from "react";
 import { predinexReadApi } from "../../lib/adapters/predinex-read-api";
@@ -10,6 +11,7 @@ import type { Pool } from "../../lib/adapters/types";
 import { TrendingUp, Users, Clock } from "lucide-react";
 import { use } from "react";
 import ShareButton from "../../../components/ShareButton";
+import { TruncatedAddress } from "../../../components/TruncatedAddress";
 
 export default function PoolDetails({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -136,7 +138,9 @@ export default function PoolDetails({ params }: { params: Promise<{ id: string }
                         <div className="bg-muted/50 p-4 rounded-lg text-center">
                             <Users className="w-5 h-5 mx-auto mb-2 text-accent" />
                             <p className="text-sm text-muted-foreground">Creator</p>
-                            <p className="font-mono text-xs truncate">{pool.creator.slice(0, 8)}...</p>
+                            <p className="font-mono text-xs truncate">
+                                <TruncatedAddress address={pool.creator} />
+                            </p>
                         </div>
                         <div className="bg-muted/50 p-4 rounded-lg text-center">
                             <Clock className="w-5 h-5 mx-auto mb-2 text-yellow-500" />
@@ -190,9 +194,10 @@ export default function PoolDetails({ params }: { params: Promise<{ id: string }
                         </div>
                     )}
 
-                    {/* Betting UI */}
+                    {/* Betting UI / Settled Summary */}
                     {pool.settled ? (
                         <div className="mt-6">
+                            <SettledPoolSummary pool={pool} />
                             <ClaimWinningsButton
                                 poolId={poolId}
                                 isSettled={pool.settled}
