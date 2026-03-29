@@ -4,22 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { LogOut, Menu, X, Wallet } from "lucide-react";
 import { useWallet } from './WalletAdapterProvider';
-import { truncateAddress } from "../lib/utils";
 import { ICON_CLASS } from "../lib/constants";
-import { NetworkMismatchWarning } from "./NetworkMismatchWarning";
+import { WalletAddressCopyButton } from "../../components/WalletAddressCopyButton";
 
 export default function Navbar() {
     const { isConnected, address, connect, disconnect } = useWallet();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [copied, setCopied] = useState(false);
-
-    const handleCopyAddress = () => {
-        if (address) {
-            navigator.clipboard.writeText(address);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        }
-    };
 
     return (
         <div className="fixed top-0 w-full z-50 flex flex-col">
@@ -54,42 +44,21 @@ export default function Navbar() {
                             )}
                         </div>
 
-                        {/* User Info & Connect Button - Desktop */}
-                        <div className="hidden md:flex items-center gap-4">
-                            {isConnected && address ? (
-                                <div className="flex items-center gap-3">
-                                    <button
-                                        onClick={handleCopyAddress}
-                                        className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-full border border-border hover:bg-muted transition-colors group relative"
-                                        title="Copy address"
-                                    >
-                                        <Wallet className={ICON_CLASS.sm + " text-primary"} />
-                                        <span className="text-sm font-mono font-medium">
-                                            {copied ? 'Copied!' : truncateAddress(address)}
-                                        </span>
-                                    </button>
-                                    <button
-                                        onClick={disconnect}
-                                        className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-full border border-red-500/20 transition-all hover:scale-110 active:scale-95"
-                                        aria-label="Sign out"
-                                        title="Sign out"
-                                    >
-                                        <LogOut className={ICON_CLASS.sm} />
-                                    </button>
-                                </div>
-                            ) : (
+                    {/* User Info & Connect Button - Desktop */}
+                    <div className="hidden md:flex items-center gap-4">
+                        {isConnected && address ? (
+                            <div className="flex items-center gap-3">
+                                <WalletAddressCopyButton address={address} />
                                 <button
-                                    onClick={connect}
-                                    className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-full border border-primary/20 transition-colors font-medium text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                    onClick={disconnect}
+                                    className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-full border border-red-500/20 transition-all hover:scale-110 active:scale-95"
+                                    aria-label="Sign out"
+                                    title="Sign out"
                                 >
-                                    <Wallet className={ICON_CLASS.sm + " text-primary"} />
-                                    Connect Wallet
+                                    <LogOut className={ICON_CLASS.sm} />
                                 </button>
-                            )}
-                        </div>
-
-                        {/* Mobile Menu Button */}
-                        <div className="md:hidden flex items-center gap-4">
+                            </div>
+                        ) : (
                             <button
                                 onClick={connect}
                                 className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-2 rounded-full border border-primary/20 transition-colors font-medium text-sm"

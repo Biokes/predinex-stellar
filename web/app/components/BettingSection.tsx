@@ -2,13 +2,11 @@
 
 import { useState } from 'react';
 import { useToast } from '../../providers/ToastProvider';
-import { openContractCall } from '@stacks/connect';
-import { uintCV } from '@stacks/transactions';
-import { getRuntimeConfig } from '../lib/runtime-config';
+import { predinexContract } from '../lib/adapters/predinex-contract';
 import { Loader2, Wallet, AlertCircle } from 'lucide-react';
-import { Pool } from '@/app/lib/stacks-api';
-import { useNetworkMismatch } from '@/lib/hooks/useNetworkMismatch';
+import type { Pool } from '@/app/lib/adapters/types';
 import { useWallet } from './WalletAdapterProvider';
+import { TruncatedAddress } from '../../components/TruncatedAddress';
 import {
     classifyConnectivityIssue,
     getConnectivityMessage,
@@ -26,7 +24,6 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
     const { isConnected, address } = useWalletConnection();
     const { isMismatch, expectedNetworkName, switchNetwork } = useNetworkMismatch();
     const { showToast } = useToast();
-    const { contract } = getRuntimeConfig();
     const [betAmount, setBetAmount] = useState("");
     const [isBetting, setIsBetting] = useState(false);
 
@@ -41,44 +38,36 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
 
         const amount = parseFloat(betAmount);
         if (!betAmount || isNaN(amount) || amount <= 0) {
-            showToast("Please enter a valid bet amount greater than 0.", "error");
+            showToastPayload(showToast, toastMessages.bet.invalidAmount);
             return;
         }
 
-        if (amount < 0.1) {
-            showToast("Minimum bet amount is 0.1 STX.", "error");
+        if (amount < MIN_BET_STX) {
+            showToastPayload(showToast, toastMessages.bet.minBet());
             return;
         }
 
         // Check wallet balance
         if (walletBalance !== null && amount > walletBalance) {
-            showToast(`Insufficient balance. You have ${walletBalance} STX.`, "error");
+            showToastPayload(showToast, toastMessages.bet.insufficientBalance(walletBalance));
             return;
         }
 
         setIsBetting(true);
         const amountInMicroStx = Math.floor(parseFloat(betAmount) * 1_000_000);
         const slowNetworkTimer = window.setTimeout(() => {
-            showToast(
-                'Network is slow. Waiting for wallet confirmation... You can keep this tab open.',
-                'info'
-            );
+            showToastPayload(showToast, toastMessages.network.slowConfirmation);
         }, 10000);
 
         try {
-            await openContractCall({
-                contractAddress: contract.address,
-                contractName: contract.name,
-                functionName: 'place-bet',
-                functionArgs: [
-                    uintCV(poolId),
-                    uintCV(outcome),
-                    uintCV(amountInMicroStx),
-                ],
+            await predinexContract.placeBet({
+                poolId,
+                outcome,
+                amountMicroStx: amountInMicroStx,
                 onFinish: (data) => {
                     window.clearTimeout(slowNetworkTimer);
                     console.log('Bet placed successfully:', data);
-                    showToast(`Bet placed successfully!`, "success");
+                    showToastPayload(showToast, toastMessages.bet.success);
                     setIsBetting(false);
                     setBetAmount("");
                     if (onBetSuccess) {
@@ -88,7 +77,7 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
                 onCancel: () => {
                     window.clearTimeout(slowNetworkTimer);
                     console.log('User cancelled bet transaction');
-                    showToast("Transaction cancelled", "info");
+                    showToastPayload(showToast, toastMessages.bet.transactionCancelled);
                     setIsBetting(false);
                 },
             });
@@ -96,7 +85,7 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
             window.clearTimeout(slowNetworkTimer);
             console.error("Bet transaction failed:", error);
             const issue = classifyConnectivityIssue(error);
-            showToast(getConnectivityMessage(issue, 'Placing your bet'), "error");
+            showToastPayload(showToast, connectivityErrorToast(issue, 'Placing your bet'));
             setIsBetting(false);
         }
     };
@@ -135,7 +124,7 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
                     <div className="flex justify-between items-center">
                         <div>
                             <p className="text-sm text-muted-foreground">Connected Wallet</p>
-                            <p className="font-mono text-sm">{address.slice(0, 8)}...{address.slice(-6)}</p>
+                            <TruncatedAddress address={address} className="font-mono text-sm" />
                         </div>
                         <div className="text-right">
                             <p className="text-sm text-muted-foreground">Balance</p>
@@ -146,10 +135,12 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
             )}
 
             {/* Balance Warning */}
-            {walletBalance !== null && walletBalance < 0.1 && (
+            {walletBalance !== null && walletBalance < MIN_BET_STX && (
                 <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex gap-2">
                     <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                    <p className="text-sm text-yellow-600">Insufficient balance to place bets. Minimum: 0.1 STX</p>
+                    <p className="text-sm text-yellow-600">
+                        Insufficient balance to place bets. Minimum: {MIN_BET_STX} STX
+                    </p>
                 </div>
             )}
 
@@ -175,12 +166,12 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
                 <input
                     type="number"
                     step="0.1"
-                    min="0.1"
+                    min={String(MIN_BET_STX)}
                     className="w-full bg-muted/50 border border-border rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50"
                     placeholder="e.g., 10"
                     value={betAmount}
                     onChange={(e) => setBetAmount(e.target.value)}
-                    disabled={isBetting || (walletBalance !== null && walletBalance < 0.1) || isMismatch}
+                    disabled={isBetting || (walletBalance !== null && walletBalance < MIN_BET_STX)}
                     aria-label="Enter bet amount in STX"
                 />
             </div>
@@ -189,14 +180,14 @@ export default function BettingSection({ pool, poolId, onBetSuccess }: BettingSe
             <div className="grid grid-cols-2 gap-4">
                 <button
                     onClick={() => placeBet(0)}
-                    disabled={isBetting || (walletBalance !== null && walletBalance < 0.1) || isMismatch}
+                    disabled={isBetting || (walletBalance !== null && walletBalance < MIN_BET_STX)}
                     className="py-4 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex justify-center items-center gap-2"
                 >
                     {isBetting ? <Loader2 className="w-5 h-5 animate-spin" /> : `Bet on ${pool.outcomeA}`}
                 </button>
                 <button
                     onClick={() => placeBet(1)}
-                    disabled={isBetting || (walletBalance !== null && walletBalance < 0.1) || isMismatch}
+                    disabled={isBetting || (walletBalance !== null && walletBalance < MIN_BET_STX)}
                     className="py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex justify-center items-center gap-2"
                 >
                     {isBetting ? <Loader2 className="w-5 h-5 animate-spin" /> : `Bet on ${pool.outcomeB}`}

@@ -3,11 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useWallet } from './WalletAdapterProvider';
 import { useWalletConnect } from '../lib/hooks/useWalletConnect';
-import { openContractCall } from '@stacks/connect';
-import { uintCV, stringAsciiCV } from '@stacks/transactions';
 import { Loader2, AlertCircle, CheckCircle, TrendingUp, Users } from 'lucide-react';
-import { useNetworkMismatch } from '@/lib/hooks/useNetworkMismatch';
-import { useAppKitAccount } from '@reown/appkit/react';
+import { formatDisplayAddress } from '../lib/address-display';
 
 interface Pool {
   id: number;
@@ -220,7 +217,7 @@ export default function PoolIntegration() {
 
                   {/* Pool Info */}
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Creator: {pool.creator.slice(0, 8)}...</span>
+                    <span>Creator: {formatDisplayAddress(pool.creator)}</span>
                     <span>Expires in {pool.expiryBlock} blocks</span>
                   </div>
 
