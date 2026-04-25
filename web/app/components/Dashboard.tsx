@@ -1,20 +1,34 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useWallet } from './WalletAdapterProvider';
 import { useWalletConnect } from '../lib/hooks/useWalletConnect';
-import IncentivesDisplay from './IncentivesDisplay';
 import { useUserDashboard } from '../lib/user-dashboard/useUserDashboard';
 import type { DashboardTabId } from '../lib/user-dashboard/types';
 import { DashboardConnectPrompt } from './user-dashboard/DashboardConnectPrompt';
 import { DashboardHeader } from './user-dashboard/DashboardHeader';
 import { DashboardStatsSections } from './user-dashboard/DashboardStatsSections';
 import { DashboardTabBar } from './user-dashboard/DashboardTabBar';
-import {
-  DashboardOverviewPanel,
-  DashboardActiveBetsPanel,
-  DashboardHistoryPanel,
-} from './user-dashboard/DashboardBetPanels';
+import { DashboardOverviewPanel } from './user-dashboard/DashboardBetPanels';
+
+function PanelSkeleton() {
+  return <div className="h-40 bg-card/20 animate-pulse rounded-xl border border-border" />;
+}
+
+const DashboardActiveBetsPanel = dynamic(
+  () => import('./user-dashboard/DashboardBetPanels').then((m) => ({ default: m.DashboardActiveBetsPanel })),
+  { loading: () => <PanelSkeleton /> },
+);
+
+const DashboardHistoryPanel = dynamic(
+  () => import('./user-dashboard/DashboardBetPanels').then((m) => ({ default: m.DashboardHistoryPanel })),
+  { loading: () => <PanelSkeleton /> },
+);
+
+const IncentivesDisplay = dynamic(() => import('./IncentivesDisplay'), {
+  loading: () => <PanelSkeleton />,
+});
 
 export default function Dashboard() {
   const { isConnected, address } = useWallet();
