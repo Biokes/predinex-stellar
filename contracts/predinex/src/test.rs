@@ -2553,3 +2553,165 @@ fn l4_successful_claim_reconciles_treasury_and_balances() {
         "remaining contract balance must equal the unclaimed treasury fee"
     );
 }
+
+// ── Issue #151: minimum pool duration guard ──────────────────────────────────
+//
+// `create_pool` rejects any duration shorter than `MIN_POOL_DURATION_SECS`
+// with the stable panic string `"Duration below minimum"`. The guard runs
+// before any state writes or fee transfers so a rejection leaves no residue.
+
+/// AC #151.1: a duration just below the minimum is rejected.
+#[test]
+#[should_panic(expected = "Duration below minimum")]
+fn issue151_create_pool_below_minimum_duration_is_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    client.initialize(&token_id.address(), &token_admin);
+
+    let creator = Address::generate(&env);
+    let below_min = MIN_POOL_DURATION_SECS - 1;
+
+    let _ = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Too short"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &below_min,
+    );
+}
+
+/// A duration of zero is rejected by the same guard. Documented separately
+/// so the regression is obvious if someone changes the comparison operator.
+#[test]
+#[should_panic(expected = "Duration below minimum")]
+fn issue151_create_pool_with_zero_duration_is_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    client.initialize(&token_id.address(), &token_admin);
+
+    let creator = Address::generate(&env);
+
+    let _ = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Zero duration"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &0u64,
+    );
+}
+
+/// AC #151.2: a duration exactly at the minimum is accepted, the pool is
+/// stored, and `expiry == created_at + MIN_POOL_DURATION_SECS`.
+#[test]
+fn issue151_create_pool_at_minimum_duration_is_accepted() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    client.initialize(&token_id.address(), &token_admin);
+
+    let creator = Address::generate(&env);
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Exactly minimum"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &MIN_POOL_DURATION_SECS,
+    );
+
+    let pool = client.get_pool(&pool_id).expect("pool must be stored");
+    assert_eq!(pool.creator, creator);
+    assert_eq!(pool.status, PoolStatus::Open);
+    assert_eq!(
+        pool.expiry,
+        pool.created_at + MIN_POOL_DURATION_SECS,
+        "expiry must derive from created_at + duration"
+    );
+}
+
+/// The public getter exposes the contract-enforced minimum so frontends and
+/// indexers can read the policy directly from the deployed contract.
+#[test]
+fn issue151_get_min_pool_duration_returns_constant() {
+    let env = Env::default();
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    assert_eq!(client.get_min_pool_duration(), MIN_POOL_DURATION_SECS);
+}
+
+/// A rejected create_pool call must not advance the pool counter or charge
+/// the creation fee — i.e. the guard runs before any state write. Using a
+/// non-zero creation fee is the most observable check for "no fee charged".
+#[test]
+fn issue151_rejection_does_not_advance_state() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+    let token = token::Client::new(&env, &token_id.address());
+
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
+
+    // Configure a non-zero creation fee so we can detect any partial state
+    // mutation that survived a panic.
+    let creation_fee: i128 = 100;
+    client.set_creation_fee(&treasury_recipient, &creation_fee);
+
+    let creator = Address::generate(&env);
+    token_admin_client.mint(&creator, &1_000);
+    let creator_balance_before = token.balance(&creator);
+    let pool_count_before = client.get_pool_count();
+
+    // Attempt to create a pool below the minimum — this must panic.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.create_pool(
+            &creator,
+            &String::from_str(&env, "Should fail"),
+            &String::from_str(&env, "Desc"),
+            &String::from_str(&env, "Yes"),
+            &String::from_str(&env, "No"),
+            &(MIN_POOL_DURATION_SECS - 1),
+        )
+    }));
+    assert!(result.is_err(), "below-minimum create_pool must panic");
+
+    // No state should have changed: counter unchanged, no fee charged, no
+    // pool record written.
+    assert_eq!(
+        client.get_pool_count(),
+        pool_count_before,
+        "pool counter must not advance on rejection"
+    );
+    assert_eq!(
+        token.balance(&creator),
+        creator_balance_before,
+        "creation fee must not be charged on rejection"
+    );
+}

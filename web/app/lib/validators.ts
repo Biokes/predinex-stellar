@@ -58,19 +58,47 @@ export function validateOutcome(outcome: string): { valid: boolean; error?: stri
 }
 
 /**
- * Validate pool duration in blocks
- * @param duration Duration in blocks
+ * Contract-enforced minimum pool duration, in seconds (issue #151).
+ *
+ * The Predinex Soroban contract rejects any `create_pool` call whose
+ * `duration` is below this value with the panic string `"Duration below
+ * minimum"`. This frontend constant must match the value of the contract
+ * constant `predinex::MIN_POOL_DURATION_SECS` and the result of the
+ * `get_min_pool_duration()` view function. See `web/docs/POOL_DURATION.md`
+ * for the policy rationale.
+ */
+export const MIN_POOL_DURATION_SECS = 300;
+
+/** Soft upper bound on the duration the form will accept (≈ 11.5 days). */
+export const MAX_POOL_DURATION_SECS = 1_000_000;
+
+/**
+ * Validate pool duration in seconds.
+ *
+ * The contract takes `duration: u64` seconds and computes
+ * `expiry = ledger_timestamp + duration`. The lower bound is the
+ * contract-enforced `MIN_POOL_DURATION_SECS` (rejecting earlier on the
+ * frontend produces a friendlier message than waiting for the on-chain
+ * panic).
+ *
+ * @param duration Duration in seconds
  * @returns Validation result
  */
 export function validateDuration(duration: number): { valid: boolean; error?: string } {
   if (!duration || duration <= 0) {
     return { valid: false, error: 'Duration must be greater than 0' };
   }
-  if (duration < 10) {
-    return { valid: false, error: 'Duration must be at least 10 blocks' };
+  if (duration < MIN_POOL_DURATION_SECS) {
+    return {
+      valid: false,
+      error: `Duration must be at least ${MIN_POOL_DURATION_SECS} seconds (5 minutes)`,
+    };
   }
-  if (duration > 1000000) {
-    return { valid: false, error: 'Duration must be less than 1,000,000 blocks' };
+  if (duration > MAX_POOL_DURATION_SECS) {
+    return {
+      valid: false,
+      error: `Duration must be less than ${MAX_POOL_DURATION_SECS.toLocaleString()} seconds`,
+    };
   }
   return { valid: true };
 }

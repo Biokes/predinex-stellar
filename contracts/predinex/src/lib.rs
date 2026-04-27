@@ -32,6 +32,23 @@ const LEDGERS_PER_DAY: u32 = 17_280;
 const POOL_BUMP_TARGET: u32 = LEDGERS_PER_DAY * 30; // extend to 30 days
 const POOL_BUMP_THRESHOLD: u32 = LEDGERS_PER_DAY * 25; // trigger bump when < 25 days remain
 
+/// #151 — Minimum allowed pool duration, in seconds.
+///
+/// `create_pool` rejects any `duration` shorter than this value with the
+/// stable error string `"Duration below minimum"`. The bound exists so that
+/// participants who discover a newly-created market always have a realistic
+/// window to enter it — without a floor a creator could publish a pool that
+/// expires almost immediately.
+///
+/// Five minutes was chosen as a balance between:
+///   * Allowing legitimate short-form markets (sports props, breaking news).
+///   * Blocking griefing patterns where a market is created and settled in
+///     the same UI session before any other participant can react.
+///
+/// Documented for frontend / deployment consumers in
+/// `web/docs/POOL_DURATION.md`.
+pub const MIN_POOL_DURATION_SECS: u64 = 300;
+
 /// Explicit lifecycle status for a prediction pool.
 ///
 /// Transitions:
@@ -197,6 +214,14 @@ impl PredinexContract {
             .unwrap_or(0)
     }
 
+    /// #151 — Return the contract-enforced minimum pool duration, in seconds.
+    /// Frontends and indexers should query this value rather than hard-code
+    /// the constant locally so any future tweak to the policy stays in
+    /// lockstep with the deployed contract.
+    pub fn get_min_pool_duration(_env: Env) -> u64 {
+        MIN_POOL_DURATION_SECS
+    }
+
     /// Normalize a Soroban `String` to a comparable form by converting to
     /// lowercase bytes and stripping leading/trailing ASCII spaces.
     /// Uses a fixed 64-byte stack buffer — outcome labels longer than 64 bytes
@@ -238,6 +263,15 @@ impl PredinexContract {
         duration: u64,
     ) -> u32 {
         creator.require_auth();
+
+        // #151 — Reject pools below the minimum duration before any state
+        // writes or fee transfers, so a rejection leaves the contract
+        // untouched (no creation fee charged, no pool counter advanced).
+        // The error string is part of the contract's stable interface; see
+        // `web/docs/POOL_DURATION.md` for the rationale and frontend guidance.
+        if duration < MIN_POOL_DURATION_SECS {
+            panic!("Duration below minimum");
+        }
 
         if Self::normalize_outcome(&env, &outcome_a) == Self::normalize_outcome(&env, &outcome_b) {
             panic!("Duplicate outcome labels");
