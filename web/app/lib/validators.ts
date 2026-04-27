@@ -8,6 +8,8 @@
  * @param title Pool title
  * @returns Validation result
  */
+import { MAX_POOL_DURATION_SECONDS } from './constants';
+
 export function validatePoolTitle(title: string): { valid: boolean; error?: string } {
   if (!title || title.trim().length === 0) {
     return { valid: false, error: 'Title is required' };
@@ -58,19 +60,25 @@ export function validateOutcome(outcome: string): { valid: boolean; error?: stri
 }
 
 /**
- * Validate pool duration in blocks
- * @param duration Duration in blocks
+ * Validate pool duration in seconds
+ * @param duration Duration in seconds
  * @returns Validation result
  */
 export function validateDuration(duration: number): { valid: boolean; error?: string } {
   if (!duration || duration <= 0) {
     return { valid: false, error: 'Duration must be greater than 0' };
   }
-  if (duration < 10) {
-    return { valid: false, error: 'Duration must be at least 10 blocks' };
+  if (duration < MIN_POOL_DURATION_SECS) {
+    return {
+      valid: false,
+      error: `Duration must be at least ${MIN_POOL_DURATION_SECS} seconds (5 minutes)`,
+    };
   }
-  if (duration > 1000000) {
-    return { valid: false, error: 'Duration must be less than 1,000,000 blocks' };
+  if (duration > MAX_POOL_DURATION_SECONDS) {
+    return {
+      valid: false,
+      error: `Duration must be less than ${MAX_POOL_DURATION_SECONDS.toLocaleString()} seconds`,
+    };
   }
   return { valid: true };
 }

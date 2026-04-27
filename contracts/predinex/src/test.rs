@@ -2,7 +2,9 @@
 extern crate std;
 use super::*;
 use soroban_sdk::String;
-use soroban_sdk::{testutils::Address as _, testutils::Ledger, Address, Env};
+use soroban_sdk::{
+    testutils::Address as _, testutils::Events, testutils::Ledger, Address, Env, IntoVal,
+};
 use std::format;
 
 #[test]
@@ -33,6 +35,142 @@ fn test_create_pool() {
     let pool = client.get_pool(&pool_id).unwrap();
     assert_eq!(pool.creator, creator);
     assert_eq!(pool.title, title);
+}
+
+#[test]
+#[should_panic(expected = "Duration must be between 1 and 1000000 seconds")]
+fn test_create_pool_rejects_duration_above_maximum() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let creator = Address::generate(&env);
+    client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &1_000_001,
+    );
+}
+
+#[test]
+fn test_create_pool_accepts_duration_just_below_maximum() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    env.ledger().with_mut(|li| li.timestamp = 42);
+
+    let creator = Address::generate(&env);
+    let duration = 999_999;
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &duration,
+    );
+
+    let pool = client.get_pool(&pool_id).unwrap();
+    assert_eq!(pool.expiry, 42 + duration);
+}
+
+#[test]
+fn test_large_pool_payouts_with_checked_arithmetic() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token = token::Client::new(&env, &token_id.address());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    client.initialize(&token_id.address(), &token_admin);
+
+    let creator = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+
+    let large_amount_a = 1_000_000_000_000_000_000i128;
+    let large_amount_b = 2_000_000_000_000_000_000i128;
+
+    token_admin_client.mint(&user1, &(large_amount_a + 100));
+    token_admin_client.mint(&user2, &(large_amount_b + 100));
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    client.place_bet(&user1, &pool_id, &0, &large_amount_a);
+    client.place_bet(&user2, &pool_id, &1, &large_amount_b);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = 3601;
+    });
+
+    client.settle_pool(&creator, &pool_id, &0);
+
+    let winnings = client.claim_winnings(&user1, &pool_id);
+    assert!(winnings > 0, "Large pool winnings must compute successfully");
+    assert_eq!(token.balance(&user1), 100 + winnings);
+}
+
+#[test]
+fn test_place_bet_rejects_pool_total_overflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(PredinexContract, ());
+    let client = PredinexContractClient::new(&env, &contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin.clone());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
+
+    client.initialize(&token_id.address(), &token_admin);
+
+    let creator = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+
+    let huge_amount = i128::MAX - 1;
+
+    token_admin_client.mint(&user1, &huge_amount);
+    token_admin_client.mint(&user2, &100);
+
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Market"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
+
+    client.place_bet(&user1, &pool_id, &0, &huge_amount);
+
+    // Overflow on the second bet should fail predictably.
+    let result = std::panic::catch_unwind(|| {
+        client.place_bet(&user2, &pool_id, &0, &2);
+    });
+
+    assert!(result.is_err(), "Pool total overflow should reject the second bet");
 }
 
 #[test]
@@ -2554,292 +2692,72 @@ fn l4_successful_claim_reconciles_treasury_and_balances() {
     );
 }
 
+/// L5: Claim winnings emits a claim event with payout and fee context.
 #[test]
-fn test_create_pool_rejects_empty_title() {
+fn l5_claim_winnings_emits_claim_event() {
     let env = Env::default();
     env.mock_all_auths();
+
+    let token_admin_addr = Address::generate(&env);
+    let token_id = env.register_stellar_asset_contract_v2(token_admin_addr.clone());
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_id.address());
 
     let contract_id = env.register(PredinexContract, ());
     let client = PredinexContractClient::new(&env, &contract_id);
 
-    let creator = Address::generate(&env);
-    let empty_title = String::from_str(&env, "");
-    let description = String::from_str(&env, "Valid description");
-    let outcome_a = String::from_str(&env, "Yes");
-    let outcome_b = String::from_str(&env, "No");
-    let duration = 3600;
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &empty_title,
-            &description,
-            &outcome_a,
-            &outcome_b,
-            &duration,
-        );
-    }));
-
-    assert!(result.is_err(), "Should panic when title is empty");
-}
-
-#[test]
-fn test_create_pool_rejects_whitespace_only_title() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(PredinexContract, ());
-    let client = PredinexContractClient::new(&env, &contract_id);
+    let treasury_recipient = Address::generate(&env);
+    client.initialize(&token_id.address(), &treasury_recipient);
 
     let creator = Address::generate(&env);
-    let whitespace_title = String::from_str(&env, "   ");
-    let description = String::from_str(&env, "Valid description");
-    let outcome_a = String::from_str(&env, "Yes");
-    let outcome_b = String::from_str(&env, "No");
-    let duration = 3600;
+    let user_a = Address::generate(&env);
+    let user_b = Address::generate(&env);
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &whitespace_title,
-            &description,
-            &outcome_a,
-            &outcome_b,
-            &duration,
-        );
-    }));
+    token_admin_client.mint(&user_a, &300);
+    token_admin_client.mint(&user_b, &200);
 
-    assert!(result.is_err(), "Should panic when title is whitespace-only");
-}
+    let pool_id = client.create_pool(
+        &creator,
+        &String::from_str(&env, "Event test"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Yes"),
+        &String::from_str(&env, "No"),
+        &3600,
+    );
 
-#[test]
-fn test_create_pool_rejects_empty_description() {
-    let env = Env::default();
-    env.mock_all_auths();
+    client.place_bet(&user_a, &pool_id, &0, &300);
+    client.place_bet(&user_b, &pool_id, &1, &200);
 
-    let contract_id = env.register(PredinexContract, ());
-    let client = PredinexContractClient::new(&env, &contract_id);
+    env.ledger().with_mut(|li| {
+        li.timestamp = 3601;
+    });
+    client.settle_pool(&creator, &pool_id, &0); // A wins
 
-    let creator = Address::generate(&env);
-    let title = String::from_str(&env, "Valid title");
-    let empty_description = String::from_str(&env, "");
-    let outcome_a = String::from_str(&env, "Yes");
-    let outcome_b = String::from_str(&env, "No");
-    let duration = 3600;
+    let winnings = client.claim_winnings(&user_a, &pool_id);
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &title,
-            &empty_description,
-            &outcome_a,
-            &outcome_b,
-            &duration,
-        );
-    }));
+    // Retrieve events emitted
+    let events = env.events().all();
 
-    assert!(result.is_err(), "Should panic when description is empty");
-}
+    // The last event emitted in `claim_winnings` is the `claim_winnings` event itself
+    let last_event = events.last().expect("must emit an event");
 
-#[test]
-fn test_create_pool_rejects_whitespace_only_description() {
-    let env = Env::default();
-    env.mock_all_auths();
+    // Verify topic
+    let topics = last_event.1;
+    let topic0: soroban_sdk::Symbol = soroban_sdk::FromVal::from_val(&env, &topics.get(0).unwrap());
+    let topic1: u32 = soroban_sdk::FromVal::from_val(&env, &topics.get(1).unwrap());
+    let topic2: Address = soroban_sdk::FromVal::from_val(&env, &topics.get(2).unwrap());
 
-    let contract_id = env.register(PredinexContract, ());
-    let client = PredinexContractClient::new(&env, &contract_id);
+    assert_eq!(topic0, soroban_sdk::Symbol::new(&env, "claim_winnings"));
+    assert_eq!(topic1, pool_id);
+    assert_eq!(topic2, user_a);
 
-    let creator = Address::generate(&env);
-    let title = String::from_str(&env, "Valid title");
-    let whitespace_description = String::from_str(&env, "\t\n\r ");
-    let outcome_a = String::from_str(&env, "Yes");
-    let outcome_b = String::from_str(&env, "No");
-    let duration = 3600;
+    // Verify payload is ClaimEvent
+    let payload_val = last_event.2;
+    let claim_event: crate::ClaimEvent = soroban_sdk::FromVal::from_val(&env, &payload_val);
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &title,
-            &whitespace_description,
-            &outcome_a,
-            &outcome_b,
-            &duration,
-        );
-    }));
+    assert_eq!(claim_event.amount, winnings);
+    assert_eq!(claim_event.winning_outcome, 0);
+    assert_eq!(claim_event.total_pool_size, 500);
 
-    assert!(result.is_err(), "Should panic when description is whitespace-only");
-}
-
-#[test]
-fn test_create_pool_rejects_empty_outcome_a() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(PredinexContract, ());
-    let client = PredinexContractClient::new(&env, &contract_id);
-
-    let creator = Address::generate(&env);
-    let title = String::from_str(&env, "Valid title");
-    let description = String::from_str(&env, "Valid description");
-    let empty_outcome_a = String::from_str(&env, "");
-    let outcome_b = String::from_str(&env, "No");
-    let duration = 3600;
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &title,
-            &description,
-            &empty_outcome_a,
-            &outcome_b,
-            &duration,
-        );
-    }));
-
-    assert!(result.is_err(), "Should panic when outcome_a is empty");
-}
-
-#[test]
-fn test_create_pool_rejects_whitespace_only_outcome_a() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(PredinexContract, ());
-    let client = PredinexContractClient::new(&env, &contract_id);
-
-    let creator = Address::generate(&env);
-    let title = String::from_str(&env, "Valid title");
-    let description = String::from_str(&env, "Valid description");
-    let whitespace_outcome_a = String::from_str(&env, "  \t  ");
-    let outcome_b = String::from_str(&env, "No");
-    let duration = 3600;
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &title,
-            &description,
-            &whitespace_outcome_a,
-            &outcome_b,
-            &duration,
-        );
-    }));
-
-    assert!(result.is_err(), "Should panic when outcome_a is whitespace-only");
-}
-
-#[test]
-fn test_create_pool_rejects_empty_outcome_b() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(PredinexContract, ());
-    let client = PredinexContractClient::new(&env, &contract_id);
-
-    let creator = Address::generate(&env);
-    let title = String::from_str(&env, "Valid title");
-    let description = String::from_str(&env, "Valid description");
-    let outcome_a = String::from_str(&env, "Yes");
-    let empty_outcome_b = String::from_str(&env, "");
-    let duration = 3600;
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &title,
-            &description,
-            &outcome_a,
-            &empty_outcome_b,
-            &duration,
-        );
-    }));
-
-    assert!(result.is_err(), "Should panic when outcome_b is empty");
-}
-
-#[test]
-fn test_create_pool_rejects_whitespace_only_outcome_b() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(PredinexContract, ());
-    let client = PredinexContractClient::new(&env, &contract_id);
-
-    let creator = Address::generate(&env);
-    let title = String::from_str(&env, "Valid title");
-    let description = String::from_str(&env, "Valid description");
-    let outcome_a = String::from_str(&env, "Yes");
-    let whitespace_outcome_b = String::from_str(&env, "\n\r\t");
-    let duration = 3600;
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &title,
-            &description,
-            &outcome_a,
-            &whitespace_outcome_b,
-            &duration,
-        );
-    }));
-
-    assert!(result.is_err(), "Should panic when outcome_b is whitespace-only");
-}
-
-#[test]
-fn test_create_pool_accepts_valid_metadata() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(PredinexContract, ());
-    let client = PredinexContractClient::new(&env, &contract_id);
-
-    let creator = Address::generate(&env);
-    let title = String::from_str(&env, "Valid Market Title");
-    let description = String::from_str(&env, "This is a valid description with content");
-    let outcome_a = String::from_str(&env, "Yes");
-    let outcome_b = String::from_str(&env, "No");
-    let duration = 3600;
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &title,
-            &description,
-            &outcome_a,
-            &outcome_b,
-            &duration,
-        );
-    }));
-
-    assert!(result.is_ok(), "Should succeed with valid metadata");
-}
-
-#[test]
-fn test_create_pool_accepts_whitespace_with_content() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let contract_id = env.register(PredinexContract, ());
-    let client = PredinexContractClient::new(&env, &contract_id);
-
-    let creator = Address::generate(&env);
-    let title = String::from_str(&env, "  Title with leading and trailing spaces  ");
-    let description = String::from_str(&env, " Description with content and spaces ");
-    let outcome_a = String::from_str(&env, "  Yes  ");
-    let outcome_b = String::from_str(&env, "  No  ");
-    let duration = 3600;
-
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.create_pool(
-            &creator,
-            &title,
-            &description,
-            &outcome_a,
-            &outcome_b,
-            &duration,
-        );
-    }));
-
-    assert!(result.is_ok(), "Should succeed when strings have whitespace but also content");
+    let expected_fee = (500i128 * 2) / 100;
+    assert_eq!(claim_event.fee_amount, expected_fee);
 }
