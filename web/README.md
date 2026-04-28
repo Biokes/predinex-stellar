@@ -26,5 +26,8 @@ The project includes a custom UI kit located in `components/ui/` designed for a 
 - **Dashboard**: Real-time portfolio tracking and performance metrics on Soroban.
 - **Transitions**: Native-like smooth page and modal animations.
 
+## Performance Policy
+Auto-refreshing market and activity hooks pause while a tab is hidden and resume immediately on focus. See [POLLING_POLICY.md](./docs/POLLING_POLICY.md) for the current cadence and visibility rules.
+
 ## Development
 See [DEVELOPMENT.md](./DEVELOPMENT.md) for setup and architectural guidelines.
