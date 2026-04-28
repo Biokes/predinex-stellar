@@ -6,7 +6,9 @@ This directory contains tests for the Next.js web frontend application.
 
 - `setup.ts` - Test environment configuration and mocks
 - `components/` - React component tests
+- `routes/` - Route-level smoke tests (verifies each top-level App Router page mounts without crashing)
 - `lib/` - API client and utility function tests
+- `helpers/` - Shared render utilities (`renderWithProviders`)
 
 ## Running Tests
 

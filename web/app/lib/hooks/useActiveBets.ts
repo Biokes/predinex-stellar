@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { UserBet } from '../dashboard-types';
 import { getUserBets } from '../dashboard-api';
+import { useVisibilityAwarePolling } from './useVisibilityAwarePolling';
+
+const REFRESH_INTERVAL_MS = 60_000;
 
 interface UseActiveBetsReturn {
   activeBets: UserBet[];
@@ -40,9 +43,9 @@ export function useActiveBets(userAddress: string | null | undefined): UseActive
     }
   }, [userAddress]);
 
-  useEffect(() => {
-    fetchBets();
-  }, [fetchBets]);
+  useVisibilityAwarePolling(fetchBets, REFRESH_INTERVAL_MS, {
+    enabled: !!userAddress,
+  });
 
   return { activeBets, isLoading, error, refresh: fetchBets };
 }
