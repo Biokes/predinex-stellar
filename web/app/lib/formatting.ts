@@ -15,8 +15,6 @@ const STROOPS_PER_UNIT = TOKEN_CONFIG.STROOPS_PER_UNIT;
 /** Configurable token symbol for display (e.g., 'STX', 'XLM', 'USD'). */
 const TOKEN_SYMBOL = TOKEN_CONFIG.SYMBOL;
 
-/** @deprecated Use STROOPS_PER_UNIT. */
-const STROOPS_PER_XLM = STROOPS_PER_UNIT;
 
 
 /**
@@ -26,16 +24,6 @@ export function unitsToStroops(amount: number): number {
   return Math.floor(amount * STROOPS_PER_UNIT);
 }
 
-/**
- * Convert XLM to stroops (multiply by 10,000,000).
- * @deprecated Use `unitsToStroops`.
- */
-export function xlmToStroops(xlmAmount: number): number {
-  return unitsToStroops(xlmAmount);
-}
-
-/** @deprecated Use `xlmToStroops`. */
-export const stxToMicroStx = xlmToStroops;
 
 /**
  * Convert stroops to token units (divide by STROOPS_PER_UNIT).
@@ -44,16 +32,6 @@ export function stroopsToUnits(stroops: number): number {
   return stroops / STROOPS_PER_UNIT;
 }
 
-/**
- * Convert stroops to XLM (divide by 10,000,000).
- * @deprecated Use `stroopsToUnits`.
- */
-export function stroopsToXlm(stroops: number): number {
-  return stroopsToUnits(stroops);
-}
-
-/** @deprecated Use `stroopsToXlm`. */
-export const microStxToStx = stroopsToXlm;
 
 /**
  * Format a stroops amount for display with proper decimal places.
@@ -68,16 +46,6 @@ export function formatTokenAmount(stroops: number): string {
   }) + ' ' + TOKEN_SYMBOL;
 }
 
-/**
- * Format a stroops amount for display with proper decimal places.
- * @deprecated Use `formatTokenAmount`.
- */
-export function formatXlmAmount(stroops: number): string {
-  return formatTokenAmount(stroops);
-}
-
-/** @deprecated Use `formatXlmAmount`. */
-export const formatStxAmount = formatXlmAmount;
 
 /**
  * Format a stroops amount with compact notation (K, M suffixes).
@@ -96,16 +64,6 @@ export function formatTokenAmountCompact(stroops: number): string {
   }
 }
 
-/**
- * Format a stroops amount with compact notation (K, M suffixes).
- * @deprecated Use `formatTokenAmountCompact`.
- */
-export function formatXlmAmountCompact(stroops: number): string {
-  return formatTokenAmountCompact(stroops);
-}
-
-/** @deprecated Use `formatXlmAmountCompact`. */
-export const formatStxAmountCompact = formatXlmAmountCompact;
 
 /**
  * Format a raw stroops value without asset suffix.
@@ -114,8 +72,6 @@ export function formatStroopsValue(stroops: number): string {
   return stroopsToUnits(stroops).toFixed(2);
 }
 
-/** @deprecated Use `formatStroopsValue`. */
-export const formatMicroStxValue = formatStroopsValue;
 
 // Export the configurable token symbol for use in components
 export { TOKEN_SYMBOL, TOKEN_CONFIG };

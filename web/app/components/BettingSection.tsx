@@ -6,7 +6,6 @@ import { predinexContract } from '../lib/adapters/predinex-contract';
 import { Loader2, Wallet, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
 import type { Pool } from '@/app/lib/adapters/types';
 import { useWallet } from './WalletAdapterProvider';
-import { useStacks } from './StacksProvider';
 import { useNetworkMismatch } from '@/lib/hooks/useNetworkMismatch';
 import { useTxStatus } from '../lib/hooks/useTxStatus';
 import { TruncatedAddress } from '../../components/TruncatedAddress';

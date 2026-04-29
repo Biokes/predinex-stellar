@@ -13,27 +13,9 @@ import {
   type Pool,
   type UserBetData,
 } from '../soroban-read-api';
-import {
-  getTotalVolume,
-  getMarkets,
-  getUserActivity,
-} from '../stacks-api';
 import { getUserActivityFromSoroban } from '../soroban-event-service';
 import type { ActivityItem } from './types';
 
-export function getStacksCoreApiBaseUrl(): string {
-  return getRuntimeConfig().api.coreApiUrl;
-}
-
-/** JSON from Hiro extended API: contract events list. */
-export async function fetchPredinexContractEvents(limit: number): Promise<{
-  results?: unknown[];
-}> {
-  const cfg = getRuntimeConfig();
-  const url = `${cfg.api.coreApiUrl}/extended/v1/contract/${cfg.contract.address}/${cfg.contract.name}/events?limit=${limit}`;
-  const response = await fetch(url);
-  return response.json();
-}
 
 /**
  * Fetches user activity via the Soroban event pipeline.
@@ -90,12 +72,6 @@ export const predinexReadApi = {
   getUserBet,
   /** Canonical Soroban read: get total pool count */
   getPoolCount,
-  /** @deprecated Use Stacks API for volume data */
-  getTotalVolume,
-  /** @deprecated Use Stacks API for markets list */
-  getMarkets,
-  /** @deprecated Use getUserActivitySoroban */
-  getUserActivity,
   /** Canonical Soroban read: get user activity via events */
-  getUserActivitySoroban,
+  getUserActivity: getUserActivitySoroban,
 };
